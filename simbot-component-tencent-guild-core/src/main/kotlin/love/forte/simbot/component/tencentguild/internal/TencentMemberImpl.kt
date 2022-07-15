@@ -44,7 +44,8 @@ import love.forte.simbot.utils.item.effectedItemsByFlow
  */
 internal class TencentMemberImpl(
     override val bot: TencentGuildComponentBotImpl,
-    override val source: TencentMemberInfo,
+    @Volatile
+    override var source: TencentMemberInfo,
     override val guild: TencentGuildImpl,
 ) : TencentMember {
     override val joinTime: Timestamp
