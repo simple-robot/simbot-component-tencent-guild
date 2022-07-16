@@ -22,14 +22,16 @@ import love.forte.simbot.Timestamp
 import love.forte.simbot.component.tencentguild.event.TcgGuildModifyEvent
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
-import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl.Companion.tencentGuildImpl
+import love.forte.simbot.component.tencentguild.internal.container.ApiInternalTcgGuildContainer
+import love.forte.simbot.component.tencentguild.internal.container.MemoryInternalTcgGuildContainer
 import love.forte.simbot.literal
 import love.forte.simbot.tencentguild.EventSignals
 import love.forte.simbot.tencentguild.TencentGuildInfo
 
 private suspend fun TencentGuildComponentBotImpl.findOrCreateGuild(data: TencentGuildInfo): TencentGuildImpl {
-    return getInternalGuild(data.id) ?: tencentGuildImpl(this, data).also {
-        internalGuilds[data.id.literal] = it
+    return when (val container = guildContainer) {
+        is MemoryInternalTcgGuildContainer -> container.computeAndGet(data)
+        is ApiInternalTcgGuildContainer -> container.get(data.id.literal)
     }
 }
 

@@ -17,7 +17,10 @@
 
 package love.forte.simbot.component.tencentguild.internal.container
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import love.forte.simbot.ID
+import love.forte.simbot.Simbot
 import love.forte.simbot.SimbotIllegalStateException
 import love.forte.simbot.component.tencentguild.internal.TencentChannelCategoryImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
@@ -26,7 +29,11 @@ import love.forte.simbot.component.tencentguild.util.requestBy
 import love.forte.simbot.literal
 import love.forte.simbot.tencentguild.TencentChannelInfo
 import love.forte.simbot.tencentguild.api.channel.GetChannelApi
+import love.forte.simbot.tencentguild.api.channel.GetGuildChannelListApi
 import love.forte.simbot.tencentguild.isGrouping
+import love.forte.simbot.utils.item.Items
+import love.forte.simbot.utils.item.Items.Companion.asItems
+import love.forte.simbot.utils.item.effectedFlowItems
 import love.forte.simbot.utils.runInBlocking
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
@@ -34,6 +41,9 @@ import java.util.concurrent.ConcurrentMap
 internal sealed class InternalTcgChannelCategoryContainer {
     abstract suspend fun get(id: String): TencentChannelCategoryImpl?
     abstract fun getBlocking(id: String): TencentChannelCategoryImpl?
+    abstract suspend fun size(): Int
+    abstract val size: Int
+    abstract val values: Items<TencentChannelCategoryImpl>
 }
 
 /**
@@ -57,6 +67,16 @@ internal class MemoryInternalTcgChannelCategoryContainer(
         return container.remove(id)
     }
     
+    override suspend fun size(): Int {
+        return container.size
+    }
+    
+    override val size: Int
+        get() = container.size
+    
+    override val values: Items<TencentChannelCategoryImpl>
+        get() = container.values.asItems()
+    
     fun computeAndGet(
         bot: TencentGuildComponentBotImpl,
         info: TencentChannelInfo,
@@ -70,19 +90,63 @@ internal class MemoryInternalTcgChannelCategoryContainer(
 }
 
 
-internal class ApiInternalTcgChannelCategoryContainer(val guild: TencentGuildImpl) :
-    InternalTcgChannelCategoryContainer() {
-    override suspend fun get(id: String): TencentChannelCategoryImpl {
-        val channelInfo = GetChannelApi(id.ID).requestBy(guild.baseBot)
-        if (!channelInfo.channelType.isGrouping) {
-            throw SimbotIllegalStateException("Channel(id=$id) is not a category channel.")
+internal class ApiInternalTcgChannelCategoryContainer(
+    val guild: TencentGuildImpl,
+    cacheMaxSize: Int = 100,
+    onRemove: (TencentChannelCategoryImpl) -> Unit = {},
+) : InternalTcgChannelCategoryContainer() {
+    private val lock = Mutex()
+    private val cache = createLruCacheMap<String, TencentChannelCategoryImpl>(cacheMaxSize, onRemove)
+    
+    private suspend fun getSync(id: String): TencentChannelCategoryImpl = lock.withLock {
+        cache[id] ?: run {
+            val channelInfo = GetChannelApi(id.ID).requestBy(guild.baseBot)
+            if (!channelInfo.channelType.isGrouping) {
+                throw SimbotIllegalStateException("Channel(id=$id) is not a category channel.")
+            }
+            
+            channelInfo.toImpl().also {
+                cache[id] = it
+            }
         }
-        
-        return TencentChannelCategoryImpl(guild.baseBot, guild, channelInfo)
+    }
+    
+    override suspend fun get(id: String): TencentChannelCategoryImpl {
+        return cache[id] ?: getSync(id)
     }
     
     override fun getBlocking(id: String): TencentChannelCategoryImpl {
-        return runInBlocking { get(id) }
+        return cache[id] ?: runInBlocking { getSync(id) }
     }
     
+    override suspend fun size(): Int {
+        var num = 0
+        allCategoryImpls().collect {
+            num++
+        }
+        return num
+    }
+    
+    override val size: Int
+        get() = runInBlocking { size() }
+    
+    override val values: Items<TencentChannelCategoryImpl>
+        get() = allCategoryImpls()
+    
+    private suspend fun TencentChannelInfo.toImpl(): TencentChannelCategoryImpl {
+        val info = GetChannelApi(id).requestBy(guild.baseBot)
+        Simbot.check(info.channelType.isGrouping) { "Channel(id=${info.id}, name=${info.name}) is not a category channel." }
+        
+        return TencentChannelCategoryImpl(guild.baseBot, guild, info)
+    }
+    
+    private fun allCategoryImpls(): Items<TencentChannelCategoryImpl> = guild.baseBot.effectedFlowItems {
+        val list = GetGuildChannelListApi(guild.id).requestBy(guild.baseBot)
+        list.forEach {
+            // only category
+            if (it.channelType.isGrouping) {
+                emit(it.toImpl())
+            }
+        }
+    }
 }

@@ -22,6 +22,7 @@ import love.forte.simbot.ID
 import love.forte.simbot.Simbot
 import love.forte.simbot.component.tencentguild.internal.TencentChannelCategoryImpl
 import love.forte.simbot.component.tencentguild.internal.TencentChannelImpl
+import love.forte.simbot.component.tencentguild.internal.TencentChannelImpl.Companion.tencentChannelImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl.Companion.tencentGuildImpl
@@ -99,7 +100,7 @@ internal suspend fun TencentGuildComponentBotImpl.createChannelImpl(
 ): TencentChannelImpl {
     val channel = GetChannelApi(channelId).requestBy(source)
     val category = resolveCategory(guild, channel.parentId.ID)
-    return TencentChannelImpl(this, channel, guild, category)
+    return tencentChannelImpl(this, channel, guild, category)
 }
 
 internal suspend fun TencentGuildComponentBotImpl.resolveCategory(
@@ -120,7 +121,7 @@ internal suspend inline fun TencentGuildComponentBotImpl.findOrCreateGuildImpl(
     guildId: ID,
     onCreate: (created: TencentGuildImpl) -> Unit = {},
 ): TencentGuildImpl {
-    return getInternalGuild(guildId) ?: createGuildImpl(guildId).also(onCreate)
+    return guildContainer.get(guildId.literal) ?: createGuildImpl(guildId).also(onCreate)
     
 }
 

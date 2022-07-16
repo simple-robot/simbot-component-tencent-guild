@@ -17,9 +17,12 @@
 
 package love.forte.simbot.component.tencentguild.internal.container
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import love.forte.simbot.ID
 import love.forte.simbot.component.tencentguild.internal.TencentChannelCategoryImpl
 import love.forte.simbot.component.tencentguild.internal.TencentChannelImpl
+import love.forte.simbot.component.tencentguild.internal.TencentChannelImpl.Companion.tencentChannelImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
 import love.forte.simbot.component.tencentguild.util.requestBy
@@ -42,6 +45,8 @@ internal sealed class InternalTcgChannelContainer {
     abstract val size: Int
     abstract val values: Items<TencentChannelImpl>
 }
+
+internal inline val InternalTcgChannelContainer.memory: MemoryInternalTcgChannelContainer? get() = this as? MemoryInternalTcgChannelContainer
 
 /**
  *
@@ -93,21 +98,34 @@ internal class MemoryInternalTcgChannelContainer(
         return container.compute(info.id.literal) { _, v ->
             v?.also {
                 it.source = info
-            } ?: TencentChannelImpl(bot, info, guild, category)
+            } ?: tencentChannelImpl(bot, info, guild, category)
         }!!
     }
     
-  
+    
 }
 
 
-internal class ApiInternalTcgChannelContainer(val guild: TencentGuildImpl) : InternalTcgChannelContainer() {
+internal class ApiInternalTcgChannelContainer(
+    val guild: TencentGuildImpl,
+    cacheMaxSize: Int = 100,
+    onRemove: (TencentChannelImpl) -> Unit = {},
+) : InternalTcgChannelContainer() {
+    private val lock = Mutex()
+    private val cache = createLruCacheMap<String, TencentChannelImpl>(cacheMaxSize, onRemove)
+    
+    private suspend fun getSync(id: String): TencentChannelImpl = lock.withLock {
+        cache[id] ?: GetChannelApi(id.ID).requestBy(guild.baseBot).toImpl().also {
+            cache[id] = it
+        }
+    }
+    
     override suspend fun get(id: String): TencentChannelImpl {
-        return GetChannelApi(id.ID).requestBy(guild.baseBot).toImpl()
+        return cache[id] ?: getSync(id)
     }
     
     override fun getBlocking(id: String): TencentChannelImpl {
-        return runInBlocking { get(id) }
+        return cache[id] ?: runInBlocking { getSync(id) }
     }
     
     override suspend fun size(): Int {
@@ -128,7 +146,7 @@ internal class ApiInternalTcgChannelContainer(val guild: TencentGuildImpl) : Int
     private suspend fun TencentChannelInfo.toImpl(): TencentChannelImpl {
         val category = guild.channelCategoryContainer.get(parentId)
             ?: throw NoSuchElementException("Category(id=${parentId}) for channel(id=${id}, name=${name})")
-        return TencentChannelImpl(guild.baseBot, this, guild, category)
+        return tencentChannelImpl(guild.baseBot, this, guild, category)
     }
     
     private fun allChannelImpls(): Items<TencentChannelImpl> = guild.baseBot.effectedFlowItems {

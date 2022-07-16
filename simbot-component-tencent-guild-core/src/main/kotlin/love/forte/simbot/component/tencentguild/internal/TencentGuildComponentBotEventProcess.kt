@@ -17,9 +17,9 @@
 
 package love.forte.simbot.component.tencentguild.internal
 
-import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl.Companion.tencentGuildImpl
 import love.forte.simbot.component.tencentguild.internal.container.MemoryInternalTcgChannelCategoryContainer
 import love.forte.simbot.component.tencentguild.internal.container.MemoryInternalTcgChannelContainer
+import love.forte.simbot.component.tencentguild.internal.container.memory
 import love.forte.simbot.component.tencentguild.internal.event.eventSignalParsers
 import love.forte.simbot.component.tencentguild.internal.event.findOrCreateGuildImpl
 import love.forte.simbot.event.pushIfProcessable
@@ -52,14 +52,13 @@ private fun TencentGuildComponentBotImpl.registerEventPreProcessor() {
             EventSignals.GuildMembers.GuildMemberRemove.type -> onMemberRemove(decoded)
         }
     }
-    
 }
 
 // region guilds
 private suspend fun TencentGuildComponentBotImpl.onGuildCreate(decoded: () -> Any) {
     val eventData = decoded()
     if (eventData is TencentGuildInfo) {
-        internalGuilds[eventData.id.literal] = tencentGuildImpl(this, eventData).also {
+        guildContainer.memory?.computeAndGet(eventData)?.also {
             logger.debug("OnGuildCreate sync: {}", it)
         }
     }
@@ -68,7 +67,7 @@ private suspend fun TencentGuildComponentBotImpl.onGuildCreate(decoded: () -> An
 private fun TencentGuildComponentBotImpl.onGuildUpdate(decoded: () -> Any) {
     val eventData = decoded()
     if (eventData is TencentGuildInfo) {
-        getInternalGuild(eventData.id)?.also { guild ->
+        guildContainer.memory?.justGet(eventData.id.literal)?.also { guild ->
             guild.source = eventData
             logger.debug("OnGuildUpdate sync: {}", eventData)
         }
@@ -78,8 +77,9 @@ private fun TencentGuildComponentBotImpl.onGuildUpdate(decoded: () -> Any) {
 private fun TencentGuildComponentBotImpl.onGuildDelete(decoded: () -> Any) {
     val eventData = decoded()
     if (eventData is TencentGuildInfo) {
-        internalGuilds.remove(eventData.id.literal)
-        logger.debug("OnGuildDelete sync: {}", eventData)
+        guildContainer.memory?.remove(eventData.id.literal)?.also {
+            logger.debug("OnGuildDelete sync: {}", eventData)
+        }
     }
 }
 // endregion
@@ -95,17 +95,17 @@ private suspend fun TencentGuildComponentBotImpl.onChannelCreate(decoded: () -> 
                 it.id,
                 it
             )
-            internalGuilds[it.id.literal] = it
+            guildContainer.memory?.container?.set(it.id.literal, it)
         }
         
-        (guild.channelContainer as? MemoryInternalTcgChannelContainer)?.computeAndGet(this, eventData)
+        guild.channelContainer.memory?.computeAndGet(this, eventData)
     }
 }
 
 private suspend fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> Any) {
     val eventData = decoded()
     if (eventData is TencentChannelInfo) {
-        val guild = getInternalGuild(eventData.guildId) ?: return
+        val guild = guildContainer.get(eventData.guildId.literal) ?: return
         if (eventData.channelType.isGrouping) {
             guild.channelCategoryContainer.get(eventData.id.literal)?.also { category ->
                 category.source = eventData
@@ -117,7 +117,6 @@ private suspend fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> 
                 )
             }
         } else {
-            // TODO update category?
             guild.channelContainer.get(eventData.id.literal)?.also { channel ->
                 channel.source = eventData
                 logger.debug("OnChannelUpdate sync: {}", eventData)
@@ -131,10 +130,10 @@ private suspend fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> 
     }
 }
 
-private fun TencentGuildComponentBotImpl.onChannelDelete(decoded: () -> Any) {
+private suspend fun TencentGuildComponentBotImpl.onChannelDelete(decoded: () -> Any) {
     val eventData = decoded()
     if (eventData is TencentChannelInfo) {
-        val guild = getInternalGuild(eventData.guildId) ?: return
+        val guild = guildContainer.get(eventData.guildId.literal) ?: return
         if (eventData.channelType.isGrouping) {
             val categoryContainer =
                 guild.channelCategoryContainer as? MemoryInternalTcgChannelCategoryContainer ?: return

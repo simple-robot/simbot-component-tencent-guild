@@ -36,7 +36,7 @@ import love.forte.simbot.utils.item.Items
  *
  * @author ForteScarlet
  */
-internal class TencentChannelImpl internal constructor(
+internal class TencentChannelImpl private constructor(
     private val baseBot: TencentGuildComponentBotImpl,
     @Volatile
     override var source: TencentChannelInfo,
@@ -108,4 +108,14 @@ internal class TencentChannelImpl internal constructor(
         get() = source.ownerId
     // endregion
     
+    companion object {
+        fun tencentChannelImpl(
+            baseBot: TencentGuildComponentBotImpl,
+            source: TencentChannelInfo,
+            guild: TencentGuildImpl,
+            category: TencentChannelCategoryImpl,
+        ): TencentChannelImpl {
+            return TencentChannelImpl(baseBot, source, guild, category)
+        }
+    }
 }
