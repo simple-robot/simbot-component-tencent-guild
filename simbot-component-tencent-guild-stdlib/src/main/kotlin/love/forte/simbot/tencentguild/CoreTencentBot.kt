@@ -39,10 +39,17 @@ public fun tencentGuildBot(
     token: String,
     configBlock: TencentGuildBotConfiguration.() -> Unit = {},
 ): TencentGuildBot {
+    return tencentGuildBot(appId, appKey, token, TencentGuildBotConfiguration().also(configBlock))
+}
+
+@JvmName("newBot")
+public fun tencentGuildBot(
+    appId: String,
+    appKey: String,
+    token: String,
+    config: TencentGuildBotConfiguration,
+): TencentGuildBot {
     val ticket = TicketImpl(appId, appKey, token)
-    val config = TencentGuildBotConfiguration().also(configBlock)
-    
-    
     return TencentGuildBotImpl(ticket, config)
 }
 
@@ -52,7 +59,7 @@ public fun tencentGuildBot(
  * 如果在配置bot之后对内容进行后续修改，可能会影响到当前bot的使用。
  */
 @Suppress("MemberVisibilityCanBePrivate")
-public class TencentGuildBotConfiguration {
+public open class TencentGuildBotConfiguration {
     
     /**
      * Context.
@@ -117,7 +124,7 @@ public class TencentGuildBotConfiguration {
      * 因为需要ws请求，因此你需要 `install(WebSockets)`
      *
      */
-    public var httpClient: HttpClient = HttpClient() {
+    public var httpClient: HttpClient = HttpClient {
         install(ContentNegotiation) {
             json(defaultJson)
         }
@@ -147,6 +154,5 @@ public class TencentGuildBotConfiguration {
             classDiscriminator = "\$t_"
         }
     }
-    
 }
 

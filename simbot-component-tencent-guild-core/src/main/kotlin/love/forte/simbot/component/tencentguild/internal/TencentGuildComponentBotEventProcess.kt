@@ -114,7 +114,7 @@ private fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> Any) {
         val guild = getInternalGuild(eventData.guildId) ?: return
         if (eventData.channelType.isGrouping) {
             guild.internalChannelCategories[eventData.id.literal]?.also { category ->
-                category.channel = eventData
+                category.source = eventData
                 logger.debug("OnChannelUpdate sync: {}", eventData)
             } ?: run {
                 logger.debug(

@@ -23,6 +23,7 @@ import love.forte.simbot.Timestamp
 import love.forte.simbot.component.tencentguild.TencentChannel
 import love.forte.simbot.component.tencentguild.TencentGuild
 import love.forte.simbot.component.tencentguild.TencentGuildComponentGuildBot
+import love.forte.simbot.component.tencentguild.internal.container.InternalTcgChannelCategoryContainer
 import love.forte.simbot.component.tencentguild.internal.info.toInternal
 import love.forte.simbot.component.tencentguild.util.requestBy
 import love.forte.simbot.literal
@@ -72,6 +73,8 @@ internal class TencentGuildImpl private constructor(
     internal val internalChannels = ConcurrentHashMap<String, TencentChannelImpl>()
     internal val internalChannelCategories = ConcurrentHashMap<String, TencentChannelCategoryImpl>()
     
+    internal val channelCategoryContainer: InternalTcgChannelCategoryContainer = TODO()
+    
     internal fun getInternalChannel(id: ID): TencentChannelImpl? = internalChannels[id.literal]
     
     override lateinit var bot: TencentGuildComponentGuildBot
@@ -94,6 +97,7 @@ internal class TencentGuildImpl private constructor(
         // TODO 如果不支持，变更策略(查询时)
         syncData()
     }
+    
     
     /**
      * 同步数据，包括成员信息和频道列表信息, 以及 [bot] 和 [owner] 的初始化。
@@ -186,7 +190,7 @@ internal class TencentGuildImpl private constructor(
             if (info.channelType.isGrouping) {
                 internalChannelCategories.compute(info.id.literal) { _, current ->
                     current?.also {
-                        it.channel = info
+                        it.source = info
                     } ?: TencentChannelCategoryImpl(baseBot, this, info)
                 }
             } else {

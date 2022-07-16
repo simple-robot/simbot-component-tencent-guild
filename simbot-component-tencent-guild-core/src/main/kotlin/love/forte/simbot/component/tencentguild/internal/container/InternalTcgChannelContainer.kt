@@ -29,7 +29,10 @@ import java.util.concurrent.ConcurrentMap
  *
  * @author ForteScarlet
  */
-internal class InternalTcgChannelContainer(override val container: ConcurrentMap<String, TencentChannelImpl>) :
+internal class InternalTcgChannelContainer(
+    private val guild: TencentGuildImpl,
+    override val container: ConcurrentMap<String, TencentChannelImpl>,
+) :
     InternalConcurrentMapObjectiveContainer<String, TencentChannelImpl>() {
     
     // 计算器
@@ -38,14 +41,12 @@ internal class InternalTcgChannelContainer(override val container: ConcurrentMap
     inline fun computeAndGet(
         bot: TencentGuildComponentBotImpl,
         info: TencentChannelInfo,
-        crossinline guildCalculator: () -> TencentGuildImpl,
         crossinline categoryCalculator: () -> TencentChannelCategoryImpl,
     ): TencentChannelImpl {
-        return compute(info.id.literal) { _, v ->
+        return container.compute(info.id.literal) { _, v ->
             v?.also {
                 it.source = info
-            } ?: TencentChannelImpl(bot, info, guildCalculator(), categoryCalculator())
+            } ?: TencentChannelImpl(bot, info, guild, categoryCalculator())
         }!!
     }
-    
 }

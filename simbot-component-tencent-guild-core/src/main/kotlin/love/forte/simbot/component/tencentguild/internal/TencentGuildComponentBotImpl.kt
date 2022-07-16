@@ -54,6 +54,7 @@ internal class TencentGuildComponentBotImpl(
     override val manager: TencentGuildBotManager,
     override val eventProcessor: EventProcessor,
     override val component: TencentGuildComponent,
+    internal val configuration: TencentGuildComponentBotConfiguration
 ) : TencentGuildComponentBot {
     
     override val coroutineContext: CoroutineContext

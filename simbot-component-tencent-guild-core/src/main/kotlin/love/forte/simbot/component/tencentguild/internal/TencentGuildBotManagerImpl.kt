@@ -29,7 +29,6 @@ import love.forte.simbot.component.tencentguild.event.TcgBotRegisteredEvent
 import love.forte.simbot.component.tencentguild.internal.event.TcgBotRegisteredEventImpl
 import love.forte.simbot.event.EventProcessor
 import love.forte.simbot.event.pushIfProcessable
-import love.forte.simbot.tencentguild.TencentGuildBotConfiguration
 import love.forte.simbot.tencentguild.tencentGuildBot
 import org.slf4j.Logger
 import java.util.concurrent.ConcurrentHashMap
@@ -131,23 +130,25 @@ internal class TencentGuildBotManagerImpl(
         appId: String,
         appKey: String,
         token: String,
-        block: TencentGuildBotConfiguration.() -> Unit,
+        block: TencentGuildComponentBotConfiguration.() -> Unit,
     ): TencentGuildComponentBot {
         val configure = configuration.botConfigure
+        val configuration = TencentGuildComponentBotConfiguration()
         lock.write {
-            val sourceBot = tencentGuildBot(appId, appKey, token) {
-                configure(appId, appKey, token)
-                block()
-                if (coroutineContext[Job] == null) {
-                    coroutineContext += completableJob
-                }
+            configuration.configure(appId, appKey, token)
+            configuration.block()
+            if (coroutineContext[Job] == null) {
+                configuration.coroutineContext += completableJob
             }
+            
+            val sourceBot = tencentGuildBot(appId, appKey, token, configuration)
+            
             // check botInfo
             logger.info("Registered bot info: {}", sourceBot.botInfo)
             return botMap.compute(appId) { key, old ->
                 if (old != null) throw BotAlreadyRegisteredException(key)
                 
-                TencentGuildComponentBotImpl(sourceBot, this, eventProcessor, component).apply {
+                TencentGuildComponentBotImpl(sourceBot, this, eventProcessor, component, configuration).apply {
                     coroutineContext[Job]!!.invokeOnCompletion {
                         // remove self on completion
                         botMap.remove(key)
@@ -160,7 +161,7 @@ internal class TencentGuildBotManagerImpl(
                     }
                 }
             }
-            // return guildBot
         }
     }
 }
+

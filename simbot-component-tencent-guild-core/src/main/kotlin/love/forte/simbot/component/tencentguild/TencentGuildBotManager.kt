@@ -27,6 +27,7 @@ import love.forte.simbot.bot.BotManager
 import love.forte.simbot.bot.BotVerifyInfo
 import love.forte.simbot.bot.ComponentMismatchException
 import love.forte.simbot.component.tencentguild.internal.TencentGuildBotManagerImpl
+import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotConfiguration
 import love.forte.simbot.event.EventProcessor
 import love.forte.simbot.tencentguild.EventSignals
 import love.forte.simbot.tencentguild.Intents
@@ -63,10 +64,7 @@ public abstract class TencentGuildBotManager : BotManager<TencentGuildComponentB
         val currentComponent = this.component.id
         if (component != currentComponent) {
             logger.debug(
-                "[{}] mismatch: [{}] != [{}]",
-                verifyInfo.name,
-                component,
-                currentComponent
+                "[{}] mismatch: [{}] != [{}]", verifyInfo.name, component, currentComponent
             )
             throw ComponentMismatchException("[$component] != [$currentComponent]")
         }
@@ -83,7 +81,7 @@ public abstract class TencentGuildBotManager : BotManager<TencentGuildComponentB
         appId: String,
         appKey: String,
         token: String,
-        block: TencentGuildBotConfiguration.() -> Unit = {},
+        block: TencentGuildComponentBotConfiguration.() -> Unit = {},
     ): TencentGuildComponentBot
     
     /**
@@ -105,9 +103,8 @@ public abstract class TencentGuildBotManager : BotManager<TencentGuildComponentB
             }
             
             // find component
-            val component =
-                components.find { it.id == TencentGuildComponent.ID_VALUE } as? TencentGuildComponent
-                    ?: throw NoSuchComponentException("component id [${TencentGuildComponent.ID_VALUE}], and type of TencentGuildComponent.")
+            val component = components.find { it.id == TencentGuildComponent.ID_VALUE } as? TencentGuildComponent
+                ?: throw NoSuchComponentException("component id [${TencentGuildComponent.ID_VALUE}], and type of TencentGuildComponent.")
             
             return TencentGuildBotManagerImpl(eventProcessor, configuration, component).also {
                 configuration.useBotManager(it)
@@ -261,6 +258,7 @@ private class TencentGuildBotManagerConfigurationImpl : TencentGuildBotManagerCo
  *
  * 通过由配置文件读取而来的信息来对指定Bot进行信息配置。
  */
+@OptIn(InternalSimbotApi::class)
 @Suppress("MemberVisibilityCanBePrivate")
 @Serializable
 public data class TencentBotViaBotFileConfiguration(
@@ -280,57 +278,88 @@ public data class TencentBotViaBotFileConfiguration(
     val token: String,
     
     
-    /**
-     * 分片总数。
-     * @see [TencentGuildBotConfiguration.totalShard]
-     */
-    val totalShard: Int? = null,
+    @Deprecated("Use config.totalShard") val totalShard: Int? = null,
+    @Deprecated("Use config.intentValues") val intentValues: Map<Int, Int> = emptyMap(),
+    @Deprecated("Use config.defaultIntents") val defaultIntents: List<String> = emptyList(),
+    @Deprecated("Use config.serverUrl") val serverUrl: String? = null,
     
-    /**
-     * 分片策略。key为分片值，
-     * value为对应分片下所需的 intent.
-     *
-     */
-    val intentValues: Map<Int, Int> = emptyMap(),
     
-    /**
-     * 默认的 [Intents]. 如果对应分片下 [intentValues] 无法找到指定的 intent, 则使用此默认值。
-     */
-    val defaultIntents: List<String> = EventSignals.intents.keys.toList(),
-    
-    /**
-     * 服务器路径地址。
-     * @see TencentGuildApi.URL_STRING
-     */
-    val serverUrl: String? = null,
+    val config: Config = DEFAULT_CONFIG,
     
     ) {
     
+    @Serializable
+    @InternalSimbotApi
+    public data class Config(
+        /**
+         * 分片总数。
+         * @see [TencentGuildBotConfiguration.totalShard]
+         */
+        val totalShard: Int? = null,
+        
+        /**
+         * 分片策略。key为分片值，
+         * value为对应分片下所需的 intent.
+         *
+         */
+        val intentValues: Map<Int, Int> = emptyMap(),
+        
+        /**
+         * 默认的 [Intents]. 如果对应分片下 [intentValues] 无法找到指定的 intent, 则使用此默认值。
+         */
+        val defaultIntents: List<String> = EventSignals.intents.keys.toList(),
+        
+        /**
+         * 服务器路径地址。
+         * @see TencentGuildApi.URL_STRING
+         */
+        val serverUrl: String? = null,
+    )
+    
     internal val defaultIntentsValue: Intents
         get() {
-            return defaultIntents.distinct().map { v ->
-                EventSignals.intents[v]
-                    ?: kotlin.runCatching {
-                        Intents(v.toInt())
-                    }.getOrElse {
-                        throw SimbotIllegalArgumentException(
-                            """Cannot resolve '$v' to intent value.
+            return config.defaultIntents.distinct().map { v ->
+                EventSignals.intents[v] ?: kotlin.runCatching {
+                    Intents(v.toInt())
+                }.getOrElse {
+                    throw SimbotIllegalArgumentException(
+                        """Cannot resolve '$v' to intent value.
                     |You can use a intent value, or use name value in: ${EventSignals.intents.keys}
                 """.trimMargin(), it
-                        )
-                    }
+                    )
+                }
             }.reduce { acc, intents -> acc + intents }
         }
     
     
-    internal fun includeConfig(configuration: TencentGuildBotConfiguration) {
+    @Suppress("DEPRECATION")
+    internal fun includeConfig(configuration: TencentGuildComponentBotConfiguration) {
         if (totalShard != null) {
-            configuration.totalShard = totalShard
+            logger.warn("Config [totalShard] is deprecated. please use [config.totalShard]")
         }
+        if (config.totalShard != null) {
+            configuration.totalShard = config.totalShard
+        }
+        
+       
         configuration.intentsForShardFactory =
-            { shard -> intentValues[shard]?.let { Intents(it) } ?: defaultIntentsValue }
+            { shard -> config.intentValues[shard]?.let { Intents(it) } ?: defaultIntentsValue }
+        if (intentValues.isNotEmpty()) {
+            logger.warn("Config [intentValues] is deprecated. please use [config.intentValues]")
+        }
+        
+        
         if (serverUrl != null) {
-            configuration.serverUrl = Url(serverUrl)
+            logger.warn("Config [serverUrl] is deprecated. please use [config.serverUrl]")
+        }
+        if (config.serverUrl != null) {
+            configuration.serverUrl = Url(config.serverUrl)
         }
     }
+    
+    public companion object {
+        private val logger = LoggerFactory.getLogger<TencentBotViaBotFileConfiguration>()
+        private val DEFAULT_CONFIG = Config()
+    }
 }
+

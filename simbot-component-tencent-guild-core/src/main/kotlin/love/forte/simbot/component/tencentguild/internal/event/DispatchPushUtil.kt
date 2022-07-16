@@ -109,7 +109,7 @@ internal suspend fun TencentGuildComponentBotImpl.resolveCategory(
         val categoryInfo = GetChannelApi(id).requestBy(source)
         guild.internalChannelCategories.compute(id.literal) { _, current ->
             current?.also {
-                it.channel = categoryInfo
+                it.source = categoryInfo
             } ?: TencentChannelCategoryImpl(this, guild, categoryInfo)
         }!!
     }

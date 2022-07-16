@@ -64,11 +64,6 @@ internal interface InternalObjectiveContainer<K, V> {
      * 直接移除某个指定元素。
      */
     fun remove(key: K): V?
-    
-    /**
-     * 根据key计算元素。
-     */
-    fun compute(key: K, reMapping: (key: K, current: V?) -> V?): V?
 }
 
 
@@ -84,9 +79,6 @@ internal abstract class InternalConcurrentMapObjectiveContainer<K, V> : Internal
     
     override fun remove(key: K): V? = container.remove(key)
     
-    override fun compute(key: K, reMapping: (key: K, current: V?) -> V?): V? {
-        return container.compute(key, reMapping)
-    }
 }
 
 

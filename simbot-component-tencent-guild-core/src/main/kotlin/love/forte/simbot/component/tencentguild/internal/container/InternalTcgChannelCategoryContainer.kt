@@ -17,33 +17,32 @@
 
 package love.forte.simbot.component.tencentguild.internal.container
 
+import love.forte.simbot.component.tencentguild.internal.TencentChannelCategoryImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
-import love.forte.simbot.component.tencentguild.internal.TencentMemberImpl
 import love.forte.simbot.literal
-import love.forte.simbot.tencentguild.TencentMemberInfo
-import java.util.concurrent.ConcurrentHashMap
+import love.forte.simbot.tencentguild.TencentChannelInfo
 import java.util.concurrent.ConcurrentMap
 
+internal sealed class InternalTcgChannelCategoryContainer
 
 /**
  *
  * @author ForteScarlet
  */
-internal class InternalTcgMemberContainer(
-    private val guild: TencentGuildImpl,
-    override val container: ConcurrentMap<String, TencentMemberImpl> = ConcurrentHashMap(),
-) :
-    InternalConcurrentMapObjectiveContainer<String, TencentMemberImpl>() {
+internal class MemoryInternalTcgChannelCategoryContainer(
+    val guild: TencentGuildImpl,
+    private val container: ConcurrentMap<String, TencentChannelCategoryImpl>,
+) : InternalTcgChannelCategoryContainer() {
     
     fun computeAndGet(
         bot: TencentGuildComponentBotImpl,
-        info: TencentMemberInfo,
-    ): TencentMemberImpl {
+        info: TencentChannelInfo,
+    ): TencentChannelCategoryImpl {
         return container.compute(info.id.literal) { _, v ->
             v?.also {
                 it.source = info
-            } ?: TencentMemberImpl(bot, info, guild)
+            } ?: TencentChannelCategoryImpl(bot, guild, info)
         }!!
     }
 }

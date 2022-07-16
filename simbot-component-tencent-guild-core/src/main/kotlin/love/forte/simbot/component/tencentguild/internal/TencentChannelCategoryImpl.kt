@@ -31,24 +31,24 @@ import love.forte.simbot.tencentguild.TencentChannelInfo
 internal class TencentChannelCategoryImpl(
     private val baseBot: TencentGuildComponentBotImpl,
     override val guild: TencentGuildImpl,
-    @Volatile internal var channel: TencentChannelInfo,
+    @Volatile internal var source: TencentChannelInfo,
 ) : TencentChannelCategory {
     override val bot: TencentGuildComponentGuildBot
         get() = guild.bot
     override val id: ID
-        get() = channel.id
+        get() = source.id
     override val name: String
-        get() = channel.name
+        get() = source.name
     override val guildId: ID
-        get() = channel.guildId
+        get() = source.guildId
     override val channelType: ChannelType
-        get() = channel.channelType
+        get() = source.channelType
     override val channelSubType: ChannelSubType
-        get() = channel.channelSubType
+        get() = source.channelSubType
     override val position: Int
-        get() = channel.position
+        get() = source.position
     override val parentId: String
-        get() = channel.parentId
+        get() = source.parentId
     override val ownerId: ID
-        get() = channel.ownerId
+        get() = source.ownerId
 }
