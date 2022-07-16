@@ -45,7 +45,9 @@ dependencies {
     api(project(":simbot-component-tencent-guild-stdlib")) {
         exclude(P.Simbot.GROUP)
     }
-    implementation(simbot("core"))
+    implementation(simbot("core")) {
+        exclude(P.Simbot.GROUP, "simbot-logger")
+    }
     
     api(libs.ktor.client.core)
     api(libs.ktor.client.cio)
@@ -59,5 +61,5 @@ dependencies {
     compileOnly(libs.charleskorn.kaml)
     
     testImplementation(libs.charleskorn.kaml)
-
+    testImplementation("ch.qos.logback:logback-classic:1.3.0-alpha13")
 }

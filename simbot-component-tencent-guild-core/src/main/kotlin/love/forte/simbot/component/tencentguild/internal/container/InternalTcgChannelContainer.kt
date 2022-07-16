@@ -17,36 +17,126 @@
 
 package love.forte.simbot.component.tencentguild.internal.container
 
+import love.forte.simbot.ID
 import love.forte.simbot.component.tencentguild.internal.TencentChannelCategoryImpl
 import love.forte.simbot.component.tencentguild.internal.TencentChannelImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
+import love.forte.simbot.component.tencentguild.util.requestBy
 import love.forte.simbot.literal
 import love.forte.simbot.tencentguild.TencentChannelInfo
+import love.forte.simbot.tencentguild.api.channel.GetChannelApi
+import love.forte.simbot.tencentguild.api.channel.GetGuildChannelListApi
+import love.forte.simbot.tencentguild.isGrouping
+import love.forte.simbot.utils.item.Items
+import love.forte.simbot.utils.item.Items.Companion.asItems
+import love.forte.simbot.utils.item.effectedFlowItems
+import love.forte.simbot.utils.runInBlocking
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
+
+internal sealed class InternalTcgChannelContainer {
+    abstract suspend fun get(id: String): TencentChannelImpl?
+    abstract fun getBlocking(id: String): TencentChannelImpl?
+    abstract suspend fun size(): Int
+    abstract val size: Int
+    abstract val values: Items<TencentChannelImpl>
+}
 
 /**
  *
  * @author ForteScarlet
  */
-internal class InternalTcgChannelContainer(
-    private val guild: TencentGuildImpl,
-    override val container: ConcurrentMap<String, TencentChannelImpl>,
-) :
-    InternalConcurrentMapObjectiveContainer<String, TencentChannelImpl>() {
+internal class MemoryInternalTcgChannelContainer(
+    val guild: TencentGuildImpl,
+    val container: ConcurrentMap<String, TencentChannelImpl> = ConcurrentHashMap(),
+) : InternalTcgChannelContainer() {
     
-    // 计算器
-    // computer
+    override suspend fun get(id: String): TencentChannelImpl? {
+        return container[id]
+    }
     
-    inline fun computeAndGet(
+    override fun getBlocking(id: String): TencentChannelImpl? {
+        return container[id]
+    }
+    
+    fun remove(id: String): TencentChannelImpl? {
+        return container.remove(id)
+    }
+    
+    override val size: Int
+        get() = container.size
+    
+    override suspend fun size(): Int = size
+    
+    
+    override val values: Items<TencentChannelImpl>
+        get() = container.values.asItems()
+    
+    suspend inline fun computeAndGet(
         bot: TencentGuildComponentBotImpl,
         info: TencentChannelInfo,
-        crossinline categoryCalculator: () -> TencentChannelCategoryImpl,
     ): TencentChannelImpl {
+        return computeAndGet(bot, info) {
+            guild.channelCategoryContainer.get(info.parentId)
+                ?: throw NoSuchElementException("Category(id=${info.parentId}, name=${info.name})")
+        }
+    }
+    
+    
+    suspend inline fun computeAndGet(
+        bot: TencentGuildComponentBotImpl,
+        info: TencentChannelInfo,
+        crossinline categoryCalculator: suspend () -> TencentChannelCategoryImpl,
+    ): TencentChannelImpl {
+        val category = categoryCalculator()
         return container.compute(info.id.literal) { _, v ->
             v?.also {
                 it.source = info
-            } ?: TencentChannelImpl(bot, info, guild, categoryCalculator())
+            } ?: TencentChannelImpl(bot, info, guild, category)
         }!!
+    }
+    
+  
+}
+
+
+internal class ApiInternalTcgChannelContainer(val guild: TencentGuildImpl) : InternalTcgChannelContainer() {
+    override suspend fun get(id: String): TencentChannelImpl {
+        return GetChannelApi(id.ID).requestBy(guild.baseBot).toImpl()
+    }
+    
+    override fun getBlocking(id: String): TencentChannelImpl {
+        return runInBlocking { get(id) }
+    }
+    
+    override suspend fun size(): Int {
+        var counter = 1
+        allChannelImpls().collect {
+            counter++
+        }
+        return counter
+    }
+    
+    override val size: Int
+        get() = runInBlocking { size() }
+    
+    
+    override val values: Items<TencentChannelImpl>
+        get() = allChannelImpls()
+    
+    private suspend fun TencentChannelInfo.toImpl(): TencentChannelImpl {
+        val category = guild.channelCategoryContainer.get(parentId)
+            ?: throw NoSuchElementException("Category(id=${parentId}) for channel(id=${id}, name=${name})")
+        return TencentChannelImpl(guild.baseBot, this, guild, category)
+    }
+    
+    private fun allChannelImpls(): Items<TencentChannelImpl> = guild.baseBot.effectedFlowItems {
+        val list = GetGuildChannelListApi(guild.id).requestBy(guild.baseBot)
+        list.forEach {
+            if (!it.channelType.isGrouping) {
+                emit(it.toImpl())
+            }
+        }
     }
 }

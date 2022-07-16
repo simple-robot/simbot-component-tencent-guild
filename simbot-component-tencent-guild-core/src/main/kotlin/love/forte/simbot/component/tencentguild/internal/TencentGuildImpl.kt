@@ -17,16 +17,18 @@
 
 package love.forte.simbot.component.tencentguild.internal
 
+import io.ktor.http.*
 import love.forte.simbot.ID
 import love.forte.simbot.LoggerFactory
 import love.forte.simbot.Timestamp
 import love.forte.simbot.component.tencentguild.TencentChannel
 import love.forte.simbot.component.tencentguild.TencentGuild
 import love.forte.simbot.component.tencentguild.TencentGuildComponentGuildBot
-import love.forte.simbot.component.tencentguild.internal.container.InternalTcgChannelCategoryContainer
+import love.forte.simbot.component.tencentguild.internal.container.*
 import love.forte.simbot.component.tencentguild.internal.info.toInternal
 import love.forte.simbot.component.tencentguild.util.requestBy
 import love.forte.simbot.literal
+import love.forte.simbot.tencentguild.EventSignals
 import love.forte.simbot.tencentguild.TencentApiException
 import love.forte.simbot.tencentguild.TencentGuildInfo
 import love.forte.simbot.tencentguild.api.channel.GetGuildChannelListApi
@@ -34,9 +36,7 @@ import love.forte.simbot.tencentguild.api.member.GetMemberApi
 import love.forte.simbot.tencentguild.api.role.GetGuildRoleListApi
 import love.forte.simbot.tencentguild.isGrouping
 import love.forte.simbot.utils.item.Items
-import love.forte.simbot.utils.item.Items.Companion.asItems
 import love.forte.simbot.utils.item.effectedFlowItems
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 
 
@@ -45,10 +45,11 @@ import kotlin.time.Duration
  * @author ForteScarlet
  */
 internal class TencentGuildImpl private constructor(
-    private val baseBot: TencentGuildComponentBotImpl,
+    internal val baseBot: TencentGuildComponentBotImpl,
     @Volatile override var source: TencentGuildInfo,
 ) : TencentGuild {
-    private val logger = LoggerFactory.getLogger("love.forte.simbot.component.tencentguild.internal.TencentGuildImpl[${source.id}]")
+    private val logger =
+        LoggerFactory.getLogger("love.forte.simbot.component.tencentguild.internal.TencentGuildImpl[${source.id}]")
     
     
     override val maximumChannel: Int
@@ -70,12 +71,11 @@ internal class TencentGuildImpl private constructor(
     override val ownerId: ID
         get() = source.ownerId
     
-    internal val internalChannels = ConcurrentHashMap<String, TencentChannelImpl>()
-    internal val internalChannelCategories = ConcurrentHashMap<String, TencentChannelCategoryImpl>()
     
-    internal val channelCategoryContainer: InternalTcgChannelCategoryContainer = TODO()
-    
-    internal fun getInternalChannel(id: ID): TencentChannelImpl? = internalChannels[id.literal]
+    internal lateinit var channelCategoryContainer: InternalTcgChannelCategoryContainer
+        private set
+    internal lateinit var channelContainer: InternalTcgChannelContainer
+        private set
     
     override lateinit var bot: TencentGuildComponentGuildBot
         internal set
@@ -135,17 +135,18 @@ internal class TencentGuildImpl private constructor(
         }
     
     
-    override val currentChannel: Int get() = internalChannels.size
+    override val currentChannel: Int get() = channelContainer.size
     
     override val channels: Items<TencentChannelImpl>
-        get() = internalChannels.values.asItems()
+        get() = channelContainer.values
     
-    override fun getChannel(id: ID): TencentChannel? {
-        return internalChannels[id.literal]
+    override suspend fun channel(id: ID): TencentChannel? {
+        return channelContainer.get(id.literal)
     }
     
-    override val channelList: List<TencentChannel>
-        get() = internalChannels.values.toList()
+    override fun getChannel(id: ID): TencentChannel? {
+        return channelContainer.getBlocking(id.literal)
+    }
     
     override suspend fun mute(duration: Duration): Boolean = false
     
@@ -176,8 +177,55 @@ internal class TencentGuildImpl private constructor(
     
     
     private suspend fun syncChannels() {
-        val channelInfoList = GetGuildChannelListApi(source.id).requestBy(baseBot).sortedBy {
-            if (it.channelType.isGrouping) 0 else 1
+        val channelModifyEventSignals = EventSignals.GuildMembers.intents
+        val eventSupport = baseBot.source.clients.all {
+            channelModifyEventSignals in it.intents
+        }
+        
+        fun useApiContainer() {
+            channelContainer = ApiInternalTcgChannelContainer(this)
+            channelCategoryContainer = ApiInternalTcgChannelCategoryContainer(this)
+        }
+        
+        if (!eventSupport) {
+            logger.warn(
+                "It does not support channel change events(Intents=EventSignals.GuildMembers.intents(value={})). Guild's channel api will directly use the API request mode.",
+                EventSignals.GuildMembers.intents
+            )
+            useApiContainer()
+            return
+        }
+        
+        val channelInfoList = kotlin.runCatching {
+            // group first
+            GetGuildChannelListApi(source.id).requestBy(baseBot).sortedBy {
+                if (it.channelType.isGrouping) 0 else 1
+            }
+        }.getOrElse {
+            if (it is TencentApiException) {
+                // 401权限不足,
+                // 列表权限错误: 11264?
+                if (it.value == HttpStatusCode.Unauthorized.value) {
+                    if (logger.isDebugEnabled) {
+                        logger.warn(
+                            "Failed to get channel list for Guild(id={}, name={}). Will use API request mode. reason: TencentApiException: {}",
+                            id,
+                            name,
+                            it.localizedMessage,
+                            it
+                        )
+                    } else {
+                        logger.warn(
+                            "Failed to get channel list for Guild(id={}, name={}). Will use API request mode. reason: TencentApiException: {}",
+                            id,
+                            name,
+                            it.localizedMessage
+                        )
+                    }
+                    useApiContainer()
+                }
+            }
+            throw it
         }
         
         logger.debug(
@@ -186,34 +234,17 @@ internal class TencentGuildImpl private constructor(
             name,
             channelInfoList.size
         )
+        val channelContainer = MemoryInternalTcgChannelContainer(this)
+        val categoryContainer = MemoryInternalTcgChannelCategoryContainer(this)
+        
+        this.channelContainer = channelContainer
+        this.channelCategoryContainer = categoryContainer
+        
         for (info in channelInfoList) {
             if (info.channelType.isGrouping) {
-                internalChannelCategories.compute(info.id.literal) { _, current ->
-                    current?.also {
-                        it.source = info
-                    } ?: TencentChannelCategoryImpl(baseBot, this, info)
-                }
+                categoryContainer.computeAndGet(baseBot, info)
             } else {
-                // find category
-                val categoryId = info.parentId
-                val category = internalChannelCategories[categoryId]
-                
-                if (category == null) {
-                    logger.warn(
-                        "Cannot find category(id={}) for sync channel({}). \nThis is an expected problem and please report this log to issues: https://github.com/simple-robot/simbot-component-tencent-guild/issues",
-                        categoryId,
-                        info
-                    )
-                    continue
-                }
-                
-                internalChannels.compute(info.id.literal) { _, current ->
-                    current?.also {
-                        it.source = info
-                    } ?: TencentChannelImpl(baseBot, info, this, category)
-                }
-                
-                
+                channelContainer.computeAndGet(baseBot, info)
             }
         }
     }

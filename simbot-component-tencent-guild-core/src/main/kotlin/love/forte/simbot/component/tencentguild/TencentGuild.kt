@@ -49,11 +49,6 @@ public interface TencentGuild : Guild, TencentGuildObjectiveContainer<TencentGui
     
     
     /**
-     * 得到此频道服务器下的所有子频道的列表副本。
-     */
-    public val channelList: List<TencentChannel>
-    
-    /**
      * 获取指定ID的子频道。
      */
     @OptIn(Api4J::class)
@@ -63,7 +58,7 @@ public interface TencentGuild : Guild, TencentGuildObjectiveContainer<TencentGui
      * 获取指定ID的子频道。
      */
     @JvmSynthetic
-    override suspend fun channel(id: ID): TencentChannel? = getChannel(id)
+    override suspend fun channel(id: ID): TencentChannel?
     
     
     /**

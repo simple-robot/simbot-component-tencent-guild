@@ -188,6 +188,7 @@ internal class TencentGuildBotImpl(
     
     internal inner class ClientImpl(
         override val shard: Shard,
+        override val intents: Intents,
         private val sessionData: EventSignals.Other.ReadyEvent.Data,
         private var heartbeatJob: Job,
         private var processingJob: Job,
@@ -263,7 +264,7 @@ internal class TencentGuildBotImpl(
                     decoder = this@TencentGuildBotImpl.decoder,
                 )
                 
-                val resumeSession = resumeSession(gatewayInfo, sessionData, _seq, logger)
+                val resumeSession = resumeSession(gatewayInfo, sessionData, _seq, logger, intents)
                 val (session, _, heartbeatJob, _, _) = resumeSession
                 this.session = session
                 this.heartbeatJob = heartbeatJob
@@ -330,7 +331,7 @@ internal class TencentGuildBotImpl(
             
             val heartbeatJob = session.heartbeatJob(hello, seq)
             
-            return SessionInfo(session, seq, heartbeatJob, logger, readyEventData)
+            return SessionInfo(session, seq, heartbeatJob, logger, readyEventData, intents)
         }.getOrElse {
             // logger.error(it.localizedMessage, it)
             session.closeReason.await().err(it)
@@ -344,6 +345,7 @@ internal class TencentGuildBotImpl(
         sessionData: EventSignals.Other.ReadyEvent.Data,
         seq: AtomicLong,
         logger: Logger,
+        intents: Intents,
     ): SessionInfo {
         val requestToken = ticket.botToken
         
@@ -367,7 +369,7 @@ internal class TencentGuildBotImpl(
         
         val heartbeatJob = session.heartbeatJob(hello, seq)
         
-        return SessionInfo(session, seq, heartbeatJob, logger, sessionData)
+        return SessionInfo(session, seq, heartbeatJob, logger, sessionData, intents)
     }
     
     /**
@@ -375,11 +377,11 @@ internal class TencentGuildBotImpl(
      */
     private suspend fun createClient(shard: Shard, gatewayInfo: GatewayInfo): ClientImpl {
         val sessionInfo = createSession(shard, gatewayInfo)
-        val (session, seq, heartbeatJob, logger, sessionData) = sessionInfo
+        val (session, seq, heartbeatJob, logger, sessionData, intents) = sessionInfo
         
         val processingJob = processEvent(sessionInfo)
         
-        return ClientImpl(shard, sessionData, heartbeatJob, processingJob, seq, session, logger)
+        return ClientImpl(shard, intents, sessionData, heartbeatJob, processingJob, seq, session, logger)
     }
     
     
@@ -553,6 +555,7 @@ private data class SessionInfo(
     val heartbeatJob: Job,
     val logger: Logger,
     val sessionData: EventSignals.Other.ReadyEvent.Data,
+    val intents: Intents,
 )
 
 

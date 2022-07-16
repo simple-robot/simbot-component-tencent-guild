@@ -17,14 +17,24 @@
 
 package love.forte.simbot.component.tencentguild.internal.container
 
+import love.forte.simbot.ID
+import love.forte.simbot.SimbotIllegalStateException
 import love.forte.simbot.component.tencentguild.internal.TencentChannelCategoryImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
+import love.forte.simbot.component.tencentguild.util.requestBy
 import love.forte.simbot.literal
 import love.forte.simbot.tencentguild.TencentChannelInfo
+import love.forte.simbot.tencentguild.api.channel.GetChannelApi
+import love.forte.simbot.tencentguild.isGrouping
+import love.forte.simbot.utils.runInBlocking
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 
-internal sealed class InternalTcgChannelCategoryContainer
+internal sealed class InternalTcgChannelCategoryContainer {
+    abstract suspend fun get(id: String): TencentChannelCategoryImpl?
+    abstract fun getBlocking(id: String): TencentChannelCategoryImpl?
+}
 
 /**
  *
@@ -32,8 +42,20 @@ internal sealed class InternalTcgChannelCategoryContainer
  */
 internal class MemoryInternalTcgChannelCategoryContainer(
     val guild: TencentGuildImpl,
-    private val container: ConcurrentMap<String, TencentChannelCategoryImpl>,
+    private val container: ConcurrentMap<String, TencentChannelCategoryImpl> = ConcurrentHashMap(),
 ) : InternalTcgChannelCategoryContainer() {
+    
+    override suspend fun get(id: String): TencentChannelCategoryImpl? {
+        return container[id]
+    }
+    
+    override fun getBlocking(id: String): TencentChannelCategoryImpl? {
+        return container[id]
+    }
+    
+    fun remove(id: String): TencentChannelCategoryImpl? {
+        return container.remove(id)
+    }
     
     fun computeAndGet(
         bot: TencentGuildComponentBotImpl,
@@ -45,4 +67,22 @@ internal class MemoryInternalTcgChannelCategoryContainer(
             } ?: TencentChannelCategoryImpl(bot, guild, info)
         }!!
     }
+}
+
+
+internal class ApiInternalTcgChannelCategoryContainer(val guild: TencentGuildImpl) :
+    InternalTcgChannelCategoryContainer() {
+    override suspend fun get(id: String): TencentChannelCategoryImpl {
+        val channelInfo = GetChannelApi(id.ID).requestBy(guild.baseBot)
+        if (!channelInfo.channelType.isGrouping) {
+            throw SimbotIllegalStateException("Channel(id=$id) is not a category channel.")
+        }
+        
+        return TencentChannelCategoryImpl(guild.baseBot, guild, channelInfo)
+    }
+    
+    override fun getBlocking(id: String): TencentChannelCategoryImpl {
+        return runInBlocking { get(id) }
+    }
+    
 }

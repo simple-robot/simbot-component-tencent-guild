@@ -24,8 +24,20 @@ import kotlinx.serialization.Serializable
 
 @Suppress("MemberVisibilityCanBePrivate")
 public class TencentApiException : IllegalStateException {
+    /**
+     * 异常响应的content信息。
+     */
     public val info: ErrInfo?
+    
+    /**
+     * http/ws协议本身的错误响应码。
+     * 假如不存在（例如ws断开时没有提供 [CloseReason]）则为 -1。
+     */
     public val value: Int
+    
+    /**
+     * http/ws协议本身的错误响应描述。
+     */
     public val description: String
     
     public constructor(value: Int, description: String) : super("$value: $description") {

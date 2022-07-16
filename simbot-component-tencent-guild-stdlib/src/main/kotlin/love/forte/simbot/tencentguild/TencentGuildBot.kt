@@ -30,7 +30,7 @@ import kotlin.coroutines.CoroutineContext
  *
  * 一个 [TencentGuildBot] 标准接口，其只提供接口定义，而实现则在 `core` 模块中。
  *
- * [TencentGuildBot] 不考虑实现 simple-robot-api 中的 [love.forte.simbot.Bot] 接口，由对组件进行实现，此处的 [TencentGuildBot] 仅定义对于一个频道机器人的最基本的信息。
+ * [TencentGuildBot] 不考虑实现 simple-robot-api 中的 [love.forte.simbot.bot.Bot] 接口，由对组件进行实现，此处的 [TencentGuildBot] 仅定义对于一个频道机器人的最基本的信息。
  *
  * @author ForteScarlet
  */
@@ -173,7 +173,7 @@ public interface TencentGuildBot : CoroutineScope {
     /**
      * 此Bot中包含的连接。
      *
-     * 如果此一个bot存在多个分片，那么这可能包
+     * 如果此一个bot存在多个分片，那么这可能包含多个链接。
      *
      */
     public val clients: List<Client>
@@ -193,6 +193,11 @@ public interface TencentGuildBot : CoroutineScope {
          * 此连接对应的分片信息。
          */
         public val shard: Shard
+    
+        /**
+         * 此链接中所提供的 intents.
+         */
+        public val intents: Intents
         
         /**
          * 事件推送所携带的 `s`.

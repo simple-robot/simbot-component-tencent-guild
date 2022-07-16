@@ -25,6 +25,8 @@ import love.forte.simbot.component.tencentguild.internal.TencentChannelImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildComponentBotImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl.Companion.tencentGuildImpl
+import love.forte.simbot.component.tencentguild.internal.container.ApiInternalTcgChannelCategoryContainer
+import love.forte.simbot.component.tencentguild.internal.container.MemoryInternalTcgChannelCategoryContainer
 import love.forte.simbot.event.Event
 import love.forte.simbot.literal
 import love.forte.simbot.tencentguild.EventSignals
@@ -105,13 +107,12 @@ internal suspend fun TencentGuildComponentBotImpl.resolveCategory(
     id: ID,
 ): TencentChannelCategoryImpl {
     val idValue = id.literal
-    return guild.internalChannelCategories[idValue] ?: run {
-        val categoryInfo = GetChannelApi(id).requestBy(source)
-        guild.internalChannelCategories.compute(id.literal) { _, current ->
-            current?.also {
-                it.source = categoryInfo
-            } ?: TencentChannelCategoryImpl(this, guild, categoryInfo)
-        }!!
+    return when (val container = guild.channelCategoryContainer) {
+        is ApiInternalTcgChannelCategoryContainer -> container.get(idValue)
+        is MemoryInternalTcgChannelCategoryContainer -> container.get(idValue) ?: run {
+            val categoryInfo = GetChannelApi(id).requestBy(source)
+            container.computeAndGet(this, categoryInfo)
+        }
     }
 }
 
@@ -131,7 +132,7 @@ internal suspend inline fun TencentGuildComponentBotImpl.findOrCreateChannelImpl
 ): TencentChannelImpl {
     val guild = findOrCreateGuildImpl(guildId, onCreateGuild)
     
-    return guild.getInternalChannel(channelId) ?: run {
+    return guild.channelContainer.get(channelId.literal) ?: run {
         createChannelImpl(guild, channelId).also(onCreateChannel)
     }
 }

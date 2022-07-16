@@ -18,6 +18,8 @@
 package love.forte.simbot.component.tencentguild.internal
 
 import love.forte.simbot.component.tencentguild.internal.TencentGuildImpl.Companion.tencentGuildImpl
+import love.forte.simbot.component.tencentguild.internal.container.MemoryInternalTcgChannelCategoryContainer
+import love.forte.simbot.component.tencentguild.internal.container.MemoryInternalTcgChannelContainer
 import love.forte.simbot.component.tencentguild.internal.event.eventSignalParsers
 import love.forte.simbot.component.tencentguild.internal.event.findOrCreateGuildImpl
 import love.forte.simbot.event.pushIfProcessable
@@ -96,24 +98,16 @@ private suspend fun TencentGuildComponentBotImpl.onChannelCreate(decoded: () -> 
             internalGuilds[it.id.literal] = it
         }
         
-        guild.internalChannels.compute(eventData.id.literal) { _, current ->
-            current?.also {
-                it.source = eventData
-            } ?: run {
-                // TODO warn or err log if not found?
-                val category = guild.internalChannelCategories[eventData.parentId]!!
-                TencentChannelImpl(this, eventData, guild, category)
-            }
-        }
+        (guild.channelContainer as? MemoryInternalTcgChannelContainer)?.computeAndGet(this, eventData)
     }
 }
 
-private fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> Any) {
+private suspend fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> Any) {
     val eventData = decoded()
     if (eventData is TencentChannelInfo) {
         val guild = getInternalGuild(eventData.guildId) ?: return
         if (eventData.channelType.isGrouping) {
-            guild.internalChannelCategories[eventData.id.literal]?.also { category ->
+            guild.channelCategoryContainer.get(eventData.id.literal)?.also { category ->
                 category.source = eventData
                 logger.debug("OnChannelUpdate sync: {}", eventData)
             } ?: run {
@@ -124,7 +118,7 @@ private fun TencentGuildComponentBotImpl.onChannelUpdate(decoded: () -> Any) {
             }
         } else {
             // TODO update category?
-            guild.getInternalChannel(eventData.id)?.also { channel ->
+            guild.channelContainer.get(eventData.id.literal)?.also { channel ->
                 channel.source = eventData
                 logger.debug("OnChannelUpdate sync: {}", eventData)
             } ?: kotlin.run {
@@ -142,14 +136,17 @@ private fun TencentGuildComponentBotImpl.onChannelDelete(decoded: () -> Any) {
     if (eventData is TencentChannelInfo) {
         val guild = getInternalGuild(eventData.guildId) ?: return
         if (eventData.channelType.isGrouping) {
+            val categoryContainer =
+                guild.channelCategoryContainer as? MemoryInternalTcgChannelCategoryContainer ?: return
             val categoryId = eventData.id.literal
-            val removedCategory = guild.internalChannelCategories.remove(eventData.id.literal)
+            val removedCategory = categoryContainer.remove(eventData.id.literal)
             logger.debug(
                 "OnChannelDelete sync: removed channel category [{}] from event data {}",
                 removedCategory,
                 eventData
             )
-            val values = guild.internalChannels.values.iterator()
+            val channelContainer = guild.channelContainer as? MemoryInternalTcgChannelContainer ?: return
+            val values = channelContainer.container.values.iterator()
             while (values.hasNext()) {
                 val next = values.next()
                 if (next.source.parentId == categoryId) {
@@ -163,7 +160,8 @@ private fun TencentGuildComponentBotImpl.onChannelDelete(decoded: () -> Any) {
                 }
             }
         } else {
-            val removed = guild.internalChannels.remove(eventData.id.literal)
+            val channelContainer = guild.channelContainer as? MemoryInternalTcgChannelContainer ?: return
+            val removed = channelContainer.remove(eventData.id.literal)
             logger.debug("OnChannelDelete sync: removed channel [{}] by event data {}", removed, eventData)
         }
     }

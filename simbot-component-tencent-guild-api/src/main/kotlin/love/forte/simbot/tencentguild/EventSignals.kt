@@ -41,6 +41,13 @@ import love.forte.simbot.CharSequenceID
 @Serializable
 public value class Intents(public val value: Int) {
     public operator fun plus(intents: Intents): Intents = Intents(value or intents.value)
+    
+    /**
+     * 对目标 [intents] 的完全匹配检测。
+     */
+    public operator fun contains(intents: Intents): Boolean {
+        return (value and intents.value) == intents.value
+    }
 }
 
 
